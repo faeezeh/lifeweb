@@ -5,33 +5,6 @@ from openpyxl import Workbook
 from django.http import HttpResponse, JsonResponse
 
 
-def fetch_apps():
-    
-    url = "https://cafebazaar.ir/lists/ml-mental-health-exercises"
-
-    response = requests.get(url)
-    
-    print("Response Status Code:", response.status_code)
-    if response.status_code != 200:
-        print("Failed to fetch the page.")
-    
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
-    print(soup.prettify())  
-    
-    apps = []
-    
-    for app_card in soup.select(".carousel__inner-content"):  
-        name_element = app_card.select_one(".SimpleAppItem__title.fs-14")
-        
-        if name_element:
-            name = name_element.text.strip()
-            print("App Name Found:", name)  
-            apps.append({"name": name})
-        else:
-            print("App Name Not Found in this Card.")
-    
-    return apps
 
 def generate_excel(request):
 
@@ -73,8 +46,6 @@ def generate_excel(request):
     #         apps.append({"name": name, "link": link})
 
 
-    app_cards = soup.select(".SimpleAppItem.SimpleAppItem--single")
-    
     for app_card in soup.select(".SimpleAppItem.SimpleAppItem--single"):
         name_tag = app_card.select_one(".SimpleAppItem__title.fs-14")
         link_tag = app_card.get("href")
@@ -87,19 +58,67 @@ def generate_excel(request):
     workbook = Workbook()
     apps_sheet = workbook.active
     apps_sheet.title = "Apps"
-    apps_sheet.append(["Name", "Link"])  
+    apps_sheet.append(["Name", "Description", "Installs", "Size", "Last Updated", "Image Links"])  
     
     
     for app in apps:
-        apps_sheet.append([app['name'], app['link']])
-    
-   
+        # apps_sheet.append([app['name'], app['link']])
+        app_name = app["name"]
+        app_link = app["link"]
+        app_details = fetch_app_details(app_link)
+
+        apps_sheet.append([
+        app_name,
+                app_details.get("description", ""),
+                app_details.get("installs", ""),
+                app_details.get("size", ""),
+                app_details.get("last_updated", ""),
+                # app_details.get("image_links", "")
+                ", ".join(app_details.get("image_links", []))
+        ]) 
+ 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
     response['Content-Disposition'] = 'attachment; filename="cafebazaar_data.xlsx"'
     workbook.save(response)
     return response
+
+def fetch_app_details(app_link):
+    response = requests.get(app_link)
+    soup = BeautifulSoup(response.text, "html.parser")    
+
+    app_name = soup.select_one(".AppName.fs-16").text.strip()
+
+    # description = app_card.select_one(".AppDescription__content.fs-14").text.strip()
+    description_parts = soup.select(".AppDescription__content.fs-14")
+    description = " ".join(part.text.strip() for part in description_parts)
+    installs, size, last_updated = "null", "null", "null"
+
+    info_cubes = soup.select(".InfoCube")
+    for cube in info_cubes:
+        title = cube.select_one(".InfoCube__title.fs-12").text.strip() if cube.select_one(".InfoCube__title.fs-12") else ""
+        content = cube.select_one(".InfoCube__content.fs-14").text.strip() if cube.select_one(".InfoCube__content.fs-14") else ""
+            
+        if "نصب" in title:
+            installs = content
+        elif "حجم" in title:
+            size = content
+        elif "آخرین بروزرسانی" in title:
+            last_updated = content
+
+    image_tags = soup.select(".DetailsPageHeader__mobile picture img")
+    image_links = [img.get("src") for img in image_tags]
+
+    return {
+            "app_name": app_name,
+            "description": description,
+            "installs": installs,
+            "size": size,
+            "last_updated": last_updated,
+            "image_links": image_links
+        }
+        
 
 def template_view(request):
     return render(request, 'mentalHealth/export.html')
