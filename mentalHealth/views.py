@@ -107,9 +107,10 @@ def fetch_app_details(app_link):
         elif "آخرین بروزرسانی" in title:
             last_updated = content
 
-    image_tags = soup.select(".DetailsPageHeader__mobile picture img")
-    image_links = [img.get("src") for img in image_tags]
-
+    image_tags = soup.select(".sg__cell picture img")
+    image_links = [img.get("src") for img in image_tags if img.get("src")]
+    # image_links = "\n".join([image_tag['src'] for image_tag in image_tags if 'src' in image_tag.attrs])
+    # print("Extracted image links:", image_links)
     return {
             "app_name": app_name,
             "description": description,
@@ -119,6 +120,20 @@ def fetch_app_details(app_link):
             "image_links": image_links
         }
         
+def test(request):
+
+    
+    url_app_detail = "https://cafebazaar.ir/app/com.diaco.khodam"
+    response = requests.get(url_app_detail)
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    # image_section = soup.select_one(".sg__cell")
+    # print(image_section.prettify() if image_section else "No section found")
+    elements = soup.select(".sg__cell picture img")
+    response_data = [element['src'] for element in elements if 'src' in element.attrs] 
+    return JsonResponse({"results": response_data})
+
+    
 
 def template_view(request):
     return render(request, 'mentalHealth/export.html')
