@@ -1,17 +1,15 @@
-from io import BytesIO
+import datetime
 import requests
-import pandas as pd
 import time
 
 from django.shortcuts import render
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -19,42 +17,12 @@ from selenium.webdriver.support import expected_conditions as EC
 def generate_excel(request):
 
     url_apps = "https://cafebazaar.ir/lists/ml-mental-health-exercises"
-    url_app_detail = "https://cafebazaar.ir/app/com.diaco.khodam"
     response = requests.get(url_apps)
     
-
-    
-    # with open("appDetail.html", "w", encoding="utf-8") as file:
-    #     file.write(response.text)
-    
     soup = BeautifulSoup(response.text,"html.parser")
-    
+    start_time = datetime.datetime.now()
+    print(start_time)
     apps = []
-
-    # for app in soup.select(".LayoutRoot__content.container padding"):  
-    #     app_name = app.select_one(".SimpleAppItem__title.fs-14")
-    #     apps.append(app_name)
-
-#fetch name in main page
-    # for app in soup.select(".SimpleAppItem__title.fs-14"):
-    #     app_name = app.text.strip()
-    #     apps.append({"name": app_name})   
-    # 
-
-    # elements = soup.select(".GroupedRow__body")
-    # response_data = [element.text.strip() for element in elements]
-    # return JsonResponse({"results": response_data})
-
-    # apps = []
-    # for app_card in soup.select(".Box__body.GroupedRow__body"):
-    #     name_tag = app_card.select_one(".SimpleAppItem__title.fs-14")
-    #     link_tag = app_card.select_one(".SimpleAppItem.SimpleAppItem--single")
-
-    #     if name_tag and link_tag :
-    #         name = name_tag.text.strip()
-    #         link = "https://cafebazaar.ir" + link_tag
-    #         apps.append({"name": name, "link": link})
-
 
     for app_card in soup.select(".SimpleAppItem.SimpleAppItem--single"):
         name_tag = app_card.select_one(".SimpleAppItem__title.fs-14")
@@ -72,7 +40,6 @@ def generate_excel(request):
     
     
     for app in apps:
-        # apps_sheet.append([app['name'], app['link']])
         app_name = app["name"]
         app_link = app["link"]
         app_details = fetch_app_details(app_link)
@@ -83,10 +50,29 @@ def generate_excel(request):
                 app_details.get("installs", ""),
                 app_details.get("size", ""),
                 app_details.get("last_updated", ""),
-                # app_details.get("image_links", "")
                 ", ".join(app_details.get("image_links", []))
-        ]) 
- 
+        ])
+
+    comments_sheet = workbook.create_sheet(title="Comments")
+    comments_sheet.append(["User ID", "Customer Name", "Comment Content", "Rate", "Date"])   
+
+    for app in apps:
+        app_link = app["link"]
+        app_comments = fetch_app_comments(app_link)
+
+        for comment in app_comments:
+            comments_sheet.append([
+                comment.get("user_id", ""),
+                comment.get("display_name", ""),
+                comment.get("comment", ""),
+                comment.get("rating", ""),
+                comment.get("date", ""),
+            ])
+   
+    end_time = datetime.datetime.now()
+    execution_time = end_time - start_time
+    print(f"time execution : {execution_time}")
+
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
@@ -119,8 +105,7 @@ def fetch_app_details(app_link):
 
     image_tags = soup.select(".sg__cell picture img")
     image_links = [img.get("src") for img in image_tags if img.get("src")]
-    # image_links = "\n".join([image_tag['src'] for image_tag in image_tags if 'src' in image_tag.attrs])
-    # print("Extracted image links:", image_links)
+
     return {
             "app_name": app_name,
             "description": description,
@@ -171,41 +156,9 @@ def fetch_app_comments(app_link):
         })
 
     driver.quit() 
-    
-    df = pd.DataFrame(reviews)
 
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Reviews")
-    output.seek(0)  
+    return reviews
 
-    return output
-        
-def test(request):
-
-    
-    url_app_detail = "https://cafebazaar.ir/app/com.diaco.khodam"
-    # response = requests.get(url_app_detail)
-   
-    # soup = BeautifulSoup(response.text, "html.parser")
-    # image_section = soup.select_one(".sg__cell")
-    # print(image_section.prettify() if image_section else "No section found")
-    # elements = soup.select(".sg__cell picture img")
-    # response_data = [element['src'] for element in elements if 'src' in element.attrs] 
-    # return JsonResponse({"results": response_data})
-    
-    excel_file = fetch_app_comments(url_app_detail)
-    
-    # ایجاد پاسخ برای دانلود فایل
-    response = HttpResponse(
-        excel_file,
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    response["Content-Disposition"] = 'attachment; filename="comments.xlsx"'
-
-    return response
-   
-    
 
 def template_view(request):
     return render(request, 'mentalHealth/export.html')
