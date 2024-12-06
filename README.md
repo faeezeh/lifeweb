@@ -11,3 +11,6 @@ if you finish this project in approprite tims continue to :
 4. Auth
 5. Cashing(Celery)
 
+
+
+friday 11 AM -> I recived 180 comments for an app I think thats better to try Cashing

@@ -1,9 +1,19 @@
-from django.shortcuts import render
+from io import BytesIO
 import requests
-from bs4 import BeautifulSoup
-from openpyxl import Workbook
+import pandas as pd
+import time
+
+from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 
+from bs4 import BeautifulSoup
+from openpyxl import Workbook
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 def generate_excel(request):
@@ -119,20 +129,82 @@ def fetch_app_details(app_link):
             "last_updated": last_updated,
             "image_links": image_links
         }
+
+def fetch_app_comments(app_link):
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')  
+    driver = webdriver.Chrome(options=options)
+    driver.get(app_link)
+    
+    reviews = []
+    while True:
+        
+        try:
+            more_button = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".newbtn.AppCommentsList__loadmore"))
+            )
+            more_button.click()
+            time.sleep(2)  
+        except:
+            break
+
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    review_elements = soup.select(".AppCommentsList.padding")  # انتخاب نظرات
+    elements = soup.find_all("div", class_="AppComment AppCommentsList__item")
+    for element in elements:
+        user_id = element.get("id", "unkown")
+        display_name = element.select_one(".AppComment__username").text.strip()
+        comment = element.select_one(".AppComment__body.fs-14").text.strip()
+        # rating = element.select_one(".rating__fill")
+        
+        rating = element.select_one(".rating__fill").get("style", "unkown").replace("width:", "").replace(";", "").strip()
+        # date = element.find_all("div")[-1].get("style", "unkown").replace("width:", "").replace(";", "").strip()
+        date = element.find_all("div")[-2].text.strip()
+        # date = element.find_next(".rating__fill").text.strip()
+        
+        reviews.append({
+            "user_id": user_id,
+            "display_name": display_name,
+            "comment": comment,
+            "rating": rating,
+            "date": date,
+        })
+
+    driver.quit() 
+    
+    df = pd.DataFrame(reviews)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Reviews")
+    output.seek(0)  
+
+    return output
         
 def test(request):
 
     
     url_app_detail = "https://cafebazaar.ir/app/com.diaco.khodam"
-    response = requests.get(url_app_detail)
-    
-    soup = BeautifulSoup(response.text, "html.parser")
+    # response = requests.get(url_app_detail)
+   
+    # soup = BeautifulSoup(response.text, "html.parser")
     # image_section = soup.select_one(".sg__cell")
     # print(image_section.prettify() if image_section else "No section found")
-    elements = soup.select(".sg__cell picture img")
-    response_data = [element['src'] for element in elements if 'src' in element.attrs] 
-    return JsonResponse({"results": response_data})
+    # elements = soup.select(".sg__cell picture img")
+    # response_data = [element['src'] for element in elements if 'src' in element.attrs] 
+    # return JsonResponse({"results": response_data})
+    
+    excel_file = fetch_app_comments(url_app_detail)
+    
+    # ایجاد پاسخ برای دانلود فایل
+    response = HttpResponse(
+        excel_file,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="comments.xlsx"'
 
+    return response
+   
     
 
 def template_view(request):
